@@ -1,7 +1,14 @@
-from dash import Dash, dcc, html
+import pandas as pd
+from dash import Dash, Input, Output, dcc, html
 import plotly.express as px
 
 import indicators as ind
+
+BLUE = "#1F5FA8"
+ORANGE = "#D9822B"
+GREY = "#A0A7B4"
+MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def fmt_k(value):
@@ -25,7 +32,7 @@ flagged_margin = ind.overall_margin(flagged_lines)
 flagged_loss = flagged["discount_loss"].sum()
 
 q1["group"] = q1["flag"].map({True: "Flagged", False: "Other sub-categories"})
-COLORS = {"Flagged": "#1F5FA8", "Other sub-categories": "#A0A7B4"}
+COLORS = {"Flagged": BLUE, "Other sub-categories": GREY}
 
 # =====================================================================
 # Q1 - Chart 1: sales share vs margin
@@ -46,7 +53,7 @@ fig_scatter.update_traces(textposition="top center", marker_size=12)
 fig_scatter.add_shape(
     type="rect", x0=median_share, x1=q1["sales_share_pct"].max() + 1,
     y0=q1["margin_pct"].min() - 5, y1=store_margin,
-    fillcolor="#1F5FA8", opacity=0.08, line_width=0, layer="below",
+    fillcolor=BLUE, opacity=0.08, line_width=0, layer="below",
 )
 fig_scatter.add_hline(y=store_margin, line_dash="dash",
                       annotation_text=f"Store margin {store_margin:.1f}%",
@@ -79,6 +86,92 @@ loss_note = (
 )
 
 # =====================================================================
+# Q2 - Chart 3: margin by discount band (updated by the dropdown)
+# =====================================================================
+def bands_figure(sub_category=None):
+    """Bar chart of the margin in each discount band."""
+    margins = ind.margin_by_band(df, sub_category)
+    data = margins.rename("margin").reset_index()
+    data["label"] = ["no lines" if pd.isna(m) else f"{m:.1f}%" for m in data["margin"]]
+    data["margin"] = data["margin"].fillna(0)
+    data["result"] = ["Loss" if m < 0 else "Profit" for m in data["margin"]]
+
+    name = sub_category or "the whole store"
+    first_loss = ind.break_band(df, sub_category)
+    if first_loss:
+        title = f"For {name}, profit turns negative in the {first_loss} discount band"
+    else:
+        title = f"For {name}, profit stays positive in every discount band"
+
+    fig = px.bar(
+        data, x="Discount Band", y="margin", text="label", color="result",
+        color_discrete_map={"Profit": BLUE, "Loss": ORANGE},
+        category_orders={"Discount Band": ind.BAND_ORDER},
+        labels={"margin": "Profit margin (%)", "Discount Band": "Discount band", "result": ""},
+        title=title,
+    )
+    fig.add_hline(y=0, line_color="black", line_width=1)
+    return fig
+
+
+def bands_note(sub_category=None):
+    """Sentence on units per line, shown under the bands chart."""
+    units = ind.units_per_line_by_band(df, sub_category).dropna()
+    return (f"Units per order line range from {units.min():.1f} to {units.max():.1f} "
+            f"across discount bands: deeper discounts do not sell more units per line.")
+
+
+dropdown_options = ["Whole store"] + sorted(df["Sub-Category"].unique())
+
+# =====================================================================
+# Q2 - Chart 4: seasonality heatmap (year x month)
+# =====================================================================
+year_month = df.groupby(["Order Year", "Order Month"])["Sales"].sum().unstack()
+year_month_index = year_month.div(year_month.mean(axis=1), axis=0)
+year_month_index.columns = MONTH_NAMES
+year_month_index.index = year_month_index.index.astype(str)
+
+season = ind.seasonality_index(df)
+peaks = season.nlargest(3).sort_index()
+peak_names = ", ".join(MONTH_NAMES[m - 1] for m in peaks.index)
+discount_by_month = ind.average_discount_by_month(df)
+
+fig_heat = px.imshow(
+    year_month_index, text_auto=".1f", color_continuous_scale="Blues", aspect="auto",
+    labels={"x": "Month", "y": "Year", "color": "Sales vs average month"},
+    title=f"Sales peak in {peak_names}: {peaks.min():.1f} to {peaks.max():.1f} times an average month",
+)
+
+heat_note = (
+    f"Yet the average discount stays between {discount_by_month.min():.1f}% and "
+    f"{discount_by_month.max():.1f}% every month: Superstore does not discount less "
+    f"when demand is high. Peak months are the best time to test smaller discounts."
+)
+
+# =====================================================================
+# Q2 - Chart 5: basket rescue rate of the flagged sub-categories
+# =====================================================================
+rescue = ind.basket_rescue_rate(df).reindex(flagged["Sub-Category"])
+rescue = rescue.rename("rate").reset_index().sort_values("rate")
+rescue["label"] = rescue["rate"].round(0).astype(int).astype(str) + "%"
+lowest = rescue.iloc[0]
+highest = rescue.iloc[-1]
+
+fig_rescue = px.bar(
+    rescue, x="rate", y="Sub-Category", orientation="h", text="label",
+    color_discrete_sequence=[BLUE],
+    labels={"rate": "Orders still profitable overall (%)", "Sub-Category": ""},
+    title=(f"Few losing discounts are rescued by the basket: "
+           f"{lowest['rate']:.0f}% ({lowest['Sub-Category']}) to "
+           f"{highest['rate']:.0f}% ({highest['Sub-Category']})"),
+)
+
+rescue_note = (
+    f"{ind.single_line_order_share(df):.0f}% of orders have only one line, "
+    f"so no basket effect is possible for them."
+)
+
+# =====================================================================
 # Layout
 # =====================================================================
 app = Dash(__name__)
@@ -86,12 +179,38 @@ app.layout = html.Div(
     style={"maxWidth": "1100px", "margin": "auto", "fontFamily": "Arial"},
     children=[
         html.H1("Where should Superstore stop discounting?"),
+
         html.H2("Q1 - Where is the problem?"),
         dcc.Graph(figure=fig_scatter),
         dcc.Graph(figure=fig_loss),
         html.P(loss_note),
+
+        html.H2("Q2 - What should Superstore do about it?"),
+        html.Label("Show discount bands for:"),
+        dcc.Dropdown(id="band-dropdown", options=dropdown_options,
+                     value="Whole store", clearable=False),
+        dcc.Graph(id="bands-chart"),
+        html.P(id="bands-note"),
+        dcc.Graph(figure=fig_heat),
+        html.P(heat_note),
+        dcc.Graph(figure=fig_rescue),
+        html.P(rescue_note),
     ],
 )
+
+
+# =====================================================================
+# Callback: update the bands chart when the dropdown changes
+# =====================================================================
+@app.callback(
+    Output("bands-chart", "figure"),
+    Output("bands-note", "children"),
+    Input("band-dropdown", "value"),
+)
+def update_bands(choice):
+    sub_category = None if choice == "Whole store" else choice
+    return bands_figure(sub_category), bands_note(sub_category)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
