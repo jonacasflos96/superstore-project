@@ -45,39 +45,61 @@ def grouped_importance(model, columns):
     return importance.groupby(original).sum().sort_values(ascending=False) * 100
 
 
-if __name__ == "__main__":
-    pd.set_option("display.width", 200)
-    df = ind.load_clean()
+def run_model(df):
+    """Train the tree, compare it with the 20% rule and return everything
+    the dashboard and the report need."""
     X, y = build_dataset(df)
 
     # 70/30 split, stratified so both sets keep the same share of losing lines
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, stratify=y, random_state=RANDOM_STATE
     )
-    print(f"Test lines: {len(X_test)}")
-    print(f"Share of losing lines: {y.mean() * 100:.1f}%")
-    print(f"Accuracy of always saying 'no loss': {(1 - y.mean()) * 100:.1f}%")
-
-    # ----- Model -----
     model = train_tree(X_train, y_train)
-    tree_scores = scores(y_test, model.predict(X_test))
 
-    # ----- Baseline: the simple rule "discount above 20%" -----
-    rule_pred = (X_test["Discount"] > 0.2).astype(int)
-    rule_scores = scores(y_test, rule_pred)
+    # Model vs baseline (the simple rule "discount above 20%")
+    results = pd.DataFrame({
+        "Decision tree": scores(y_test, model.predict(X_test)),
+        "Rule: discount > 20%": scores(y_test, (X_test["Discount"] > 0.2).astype(int)),
+    })
+
+    # ML indicator: predicted loss risk of each line, averaged by sub-category and band
+    lines = df.assign(loss_risk=model.predict_proba(X)[:, 1] * 100)
+    risk_table = lines.pivot_table(
+        index="Sub-Category", columns="Discount Band",
+        values="loss_risk", aggfunc="mean",
+    ).reindex(columns=ind.BAND_ORDER)
+
+    return {
+        "model": model,
+        "columns": list(X.columns),
+        "test_lines": len(X_test),
+        "loss_share": y.mean() * 100,
+        "results": results,
+        "importance": grouped_importance(model, X.columns),
+        "first_split": (X.columns[model.tree_.feature[0]], model.tree_.threshold[0]),
+        "risk_table": risk_table,
+    }
+
+
+if __name__ == "__main__":
+    pd.set_option("display.width", 200)
+    out = run_model(ind.load_clean())
+
+    print(f"Test lines: {out['test_lines']}")
+    print(f"Share of losing lines: {out['loss_share']:.1f}%")
+    print(f"Accuracy of always saying 'no loss': {100 - out['loss_share']:.1f}%")
 
     print("\nScores on the loss class (%):")
-    results = pd.DataFrame({"Decision tree": tree_scores,
-                            "Rule: discount > 20%": rule_scores})
-    print(results.round(1))
+    print(out["results"].round(1))
 
-    # ----- What drives the model -----
     print("\nFeature importance (%):")
-    print(grouped_importance(model, X.columns).round(1))
+    print(out["importance"].round(1))
 
-    first_feature = X.columns[model.tree_.feature[0]]
-    first_threshold = model.tree_.threshold[0]
-    print(f"\nFirst split: {first_feature} <= {first_threshold:.3f}")
+    feature, threshold = out["first_split"]
+    print(f"\nFirst split: {feature} <= {threshold:.3f}")
+
+    print("\nLoss risk by sub-category and discount band (%):")
+    print(out["risk_table"].round(0))
 
     print("\nDecision rules:")
-    print(export_text(model, feature_names=list(X.columns)))
+    print(export_text(out["model"], feature_names=out["columns"]))

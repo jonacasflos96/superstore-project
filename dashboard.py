@@ -3,6 +3,7 @@ from dash import Dash, Input, Output, dcc, html
 import plotly.express as px
 
 import indicators as ind
+import ml_model
 
 BLUE = "#1F5FA8"
 ORANGE = "#D9822B"
@@ -174,6 +175,51 @@ rescue_note = (
 # =====================================================================
 # Layout
 # =====================================================================
+# =====================================================================
+# Machine learning - loss-risk model
+# =====================================================================
+ml = ml_model.run_model(df)
+ml_results = ml["results"]
+tree_recall = ml_results.loc["recall", "Decision tree"]
+rule_recall = ml_results.loc["recall", "Rule: discount > 20%"]
+
+# Chart 6: model vs rule
+metrics_long = ml_results.rename_axis("metric").reset_index().melt(
+    id_vars="metric", var_name="method", value_name="score"
+)
+fig_metrics = px.bar(
+    metrics_long, x="metric", y="score", color="method", barmode="group",
+    text_auto=".1f", color_discrete_sequence=[BLUE, GREY],
+    labels={"metric": "", "score": "Score on losing lines (%)", "method": ""},
+    title=(f"The decision tree catches {tree_recall:.1f}% of losing lines, "
+           f"vs {rule_recall:.1f}% for the 20% rule"),
+)
+
+# Chart 7: what drives the model
+importance = ml["importance"].rename_axis("feature").reset_index(name="importance")
+split_feature, split_threshold = ml["first_split"]
+fig_importance = px.bar(
+    importance, x="importance", y="feature", orientation="h",
+    text_auto=".1f", color_discrete_sequence=[BLUE],
+    labels={"importance": "Share of the tree's decisions (%)", "feature": ""},
+    title=(f"{importance.iloc[0]['feature']} carries {importance.iloc[0]['importance']:.0f}% "
+           f"of the decisions; first split at {split_feature} <= {split_threshold:.0%}"),
+)
+fig_importance.update_yaxes(categoryorder="total ascending")
+# Chart 8: loss-risk heatmap
+fig_risk = px.imshow(
+    ml["risk_table"], text_auto=".0f", color_continuous_scale="Oranges",
+    zmin=0, zmax=100, aspect="auto",
+    labels={"x": "Discount band", "y": "", "color": "Loss risk (%)"},
+    title="Predicted loss risk (%) by sub-category and discount band",
+)
+
+ml_note = (
+    f"Tested on {ml['test_lines']} lines the model never saw. Only "
+    f"{ml['loss_share']:.0f}% of lines lose money, so we report precision, recall and F1 "
+    f"on losing lines instead of accuracy. Empty cells: no sales in that band."
+)
+
 app = Dash(__name__)
 app.layout = html.Div(
     style={"maxWidth": "1100px", "margin": "auto", "fontFamily": "Arial"},
@@ -195,6 +241,11 @@ app.layout = html.Div(
         html.P(heat_note),
         dcc.Graph(figure=fig_rescue),
         html.P(rescue_note),
+        html.H2("Machine learning - Which lines will lose money?"),
+        dcc.Graph(figure=fig_metrics),
+        dcc.Graph(figure=fig_importance),
+        dcc.Graph(figure=fig_risk),
+        html.P(ml_note),
     ],
 )
 
