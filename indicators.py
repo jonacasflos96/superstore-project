@@ -57,6 +57,14 @@ def q1_table(df):
     )
     return table.sort_values("sales", ascending=False)
 
+def add_line_indicators(df):
+    """Add line-level indicator columns to the dataframe."""
+    df = df.copy()
+    df["Line Margin"] = df["Profit"] / df["Sales"] * 100
+    df["Loss Line"] = (df["Discount"] > 0) & (df["Profit"] < 0)
+    flagged = q1_table(df).query("flag").index
+    df["Flagged Sub-Category"] = df["Sub-Category"].isin(flagged)
+    return df
 
 # =====================================================================
 # Q2 - From which discount level does profit turn negative, and when
