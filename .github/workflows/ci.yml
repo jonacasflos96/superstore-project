@@ -1,0 +1,31 @@
+# Checks every pull request before it is merged into main:
+# all the scripts must still run from start to finish,
+# so broken code never reaches main.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the code and the data
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the libraries
+        run: pip install -r requirements.txt
+
+      - name: Run every script in order
+        run: |
+          python data_exam.py
+          python indicators.py
+          python ml_model.py
+          python -c "import dashboard"
+          python export_report.py
