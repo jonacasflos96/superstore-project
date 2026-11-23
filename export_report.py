@@ -1,0 +1,1 @@
+"""Build report.html: a static copy of the dashboard that needs no server."""
