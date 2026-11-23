@@ -1,6 +1,24 @@
 import pandas as pd
 
-df = pd.read_csv("data/raw/Sample - Superstore.csv", encoding="latin-1")
+from pathlib import Path
+
+RAW_FILE = "data/raw/Sample - Superstore.csv"
+BATCH_DIR = Path("data/batches")
+
+def load_raw():
+    """Read every batch received so far. If there are none, read the full raw file."""
+    batch_files = sorted(BATCH_DIR.glob("*.csv"))
+    if batch_files:
+        print(f"Reading {len(batch_files)} batch file(s) from {BATCH_DIR}")
+        return pd.concat(
+            [pd.read_csv(f, encoding="latin-1") for f in batch_files],
+            ignore_index=True,
+        )
+    print("No batches found: reading the full raw file")
+    return pd.read_csv(RAW_FILE, encoding="latin-1")
+
+
+df = load_raw()
 
 print(df.shape)     # (filas, columnas)
 print(df.head())    # primeras 5 filas
