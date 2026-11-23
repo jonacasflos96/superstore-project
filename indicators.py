@@ -102,6 +102,14 @@ def seasonality_index(df):
     return monthly / monthly.mean()
 
 
+def seasonality_by_subcategory(df, sub_categories):
+    """Indicator 9b: seasonality index of each given sub-category (1 = its own average month).
+    Shows when each flagged sub-category peaks, to choose when to test smaller discounts."""
+    data = df[df["Sub-Category"].isin(sub_categories)]
+    monthly = data.groupby(["Sub-Category", "Order Month"])["Sales"].sum().unstack()
+    return monthly.div(monthly.mean(axis=1), axis=0)
+
+
 def average_discount_by_month(df):
     """Support for indicator 9: average discount applied in each month, in %."""
     return df.groupby("Order Month")["Discount"].mean() * 100
