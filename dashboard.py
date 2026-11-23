@@ -25,6 +25,8 @@ app.layout = html.Div(
         html.P(id="bands-note"),
         dcc.Graph(figure=figs["heat"]),
         html.P(figs["heat_note"]),
+        dcc.Graph(figure=figs["sub_heat"]),
+        html.P(figs["sub_heat_note"]),
         dcc.Graph(figure=figs["rescue"]),
         html.P(figs["rescue_note"]),
 

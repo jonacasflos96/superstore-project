@@ -42,6 +42,8 @@ def build_report(df):
         add_chart(fg.bands_figure(df, sub_category))
     add_chart(figs["heat"])
     add_text("p", figs["heat_note"])
+    add_chart(figs["sub_heat"])
+    add_text("p", figs["sub_heat_note"])
     add_chart(figs["rescue"])
     add_text("p", figs["rescue_note"])
 
