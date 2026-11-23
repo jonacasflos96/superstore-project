@@ -157,6 +157,23 @@ def q2_figures(df):
         f"when demand is high. Peak months are the best time to test smaller discounts."
     )
 
+    # Chart 4b: seasonality of each flagged sub-category (1 = its own average month)
+    sub_season = ind.seasonality_by_subcategory(df, flagged_names)
+    sub_season.columns = [MONTH_NAMES[m - 1] for m in sub_season.columns]
+    sub_peaks = sub_season.idxmax(axis=1)
+
+    fig_sub_heat = px.imshow(
+        sub_season, text_auto=".1f", aspect="auto",
+        color_continuous_scale="RdBu", color_continuous_midpoint=1,
+        labels={"x": "Month", "y": "", "color": "Sales vs its average month"},
+        title="Each flagged sub-category has its own busy months (blue = above its average month)",
+    )
+    sub_heat_note = (
+        "Peak month of each flagged sub-category: "
+        + ", ".join(f"{sub} in {month}" for sub, month in sub_peaks.items())
+        + ". A spike can come from a few very large orders, so check it before planning a test."
+    )
+
     # Chart 5: basket rescue rate (flagged groups, or all if none is flagged)
     groups = flagged_names or sorted(df["Sub-Category"].unique())
     rescue = ind.basket_rescue_rate(df).reindex(groups).dropna()
@@ -177,6 +194,7 @@ def q2_figures(df):
 
     return {"early_loss_groups": early_loss,
             "heat": fig_heat, "heat_note": heat_note,
+            "sub_heat": fig_sub_heat, "sub_heat_note": sub_heat_note,
             "rescue": fig_rescue, "rescue_note": rescue_note}
 
 
