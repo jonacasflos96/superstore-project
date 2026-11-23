@@ -1,0 +1,42 @@
+# Runs the analysis pipeline every time new data arrives.
+# The batch simulator pushes a new file to data/batches/, which triggers this workflow.
+name: pipeline
+
+on:
+  push:
+    branches: [main]
+    paths: ["data/batches/**"]   # run only when new data arrives, not for every code change
+  workflow_dispatch:              # adds a "Run workflow" button to run it by hand
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest        # a fresh computer provided by GitHub
+    steps:
+      - name: Get the code and the data
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the libraries
+        run: pip install -r requirements.txt
+
+      - name: 1. Examine and clean the data (all batches received so far)
+        run: python data_exam.py
+
+      - name: 2. Compute the indicators
+        run: python indicators.py
+
+      - name: 3. Train and test the ML model
+        run: python ml_model.py
+
+      - name: 4. Check that the dashboard builds
+        run: python -c "import dashboard"
+
+      - name: Save the clean data so it can be downloaded
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-data
+          path: data/clean/superstore_clean.csv
