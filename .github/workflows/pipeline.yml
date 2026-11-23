@@ -35,8 +35,17 @@ jobs:
       - name: 4. Check that the dashboard builds
         run: python -c "import dashboard"
 
+      - name: 5. Generate the report (static HTML, no server needed)
+        run: python export_report.py
+
       - name: Save the clean data so it can be downloaded
         uses: actions/upload-artifact@v4
         with:
           name: clean-data
           path: data/clean/superstore_clean.csv
+
+      - name: Save the report so it can be downloaded
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: report.html
